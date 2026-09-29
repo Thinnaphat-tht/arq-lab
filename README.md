@@ -2,7 +2,9 @@
 
 แล็บจำลอง Flow Control และ ARQ (Stop-and-Wait, Go-Back-N, Selective Repeat) สำหรับทบทวนวิชา Data Communication (ITDS231 Lecture 5.2)
 
-เว็บหน้าเดียว ไม่ต้องติดตั้งอะไร ดับเบิลคลิก `ARQ-Lab.html` เพื่อเปิดในเบราว์เซอร์ได้เลย
+**เปิดเล่นออนไลน์: https://thinnaphat-tht.github.io/arq-lab/**
+
+เว็บหน้าเดียว ไม่ต้องติดตั้งอะไร หรือดาวน์โหลดแล้วดับเบิลคลิก `ARQ-Lab.html` เพื่อเปิดในเบราว์เซอร์ได้เลย
 
 ## มีอะไรบ้าง
 
@@ -24,6 +26,7 @@
 ## โครงโปรเจกต์
 
 ```
+index.html            หน้าเปิดของ GitHub Pages (พาไป ARQ-Lab.html)
 ARQ-Lab.html          หน้าเว็บที่สร้างเสร็จแล้ว (ไฟล์เดียว)
 ARQ-Lab-spec.md       สเปค
 arq-src/
