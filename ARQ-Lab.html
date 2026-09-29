@@ -1,0 +1,997 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ARQ Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one long page. Lab first (toolbar, window strips, time diagram, log), then comparison + pitfalls, then calculators. Dark-first signal room. */
+:root {
+  /* Reading palette: mid-tone paper gray (light) / soft charcoal (dark). Text ~11:1, secondary text >= 6:1, no pure black or white. Blue = frames, orange = ACK, green = delivered, purple = buffered, rose = errors. */
+  --bg: #e4e1d6;
+  --surface: #f2f0e8;
+  --surface2: #e9e6db;
+  --surface3: #dcd8ca;
+  --line: #bfbaa8;
+  --fg: #22262d;
+  --muted: #4b535f;
+  --frame: #2a67ad;
+  --ack: #a85200;
+  --retx: #2a67ad;
+  --buf: #6a4f9c;
+  --bad: #c01f4b;
+  --warn: #85560a;
+  --ok: #21753f;
+  --accent: #1f5fa8;
+  --on-accent: #f8f7f2;
+  --f-display: "Bai Jamjuree", "IBM Plex Sans Thai", sans-serif;
+  --f-body: "IBM Plex Sans Thai", "Noto Sans Thai", sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #262b33; --surface: #2f353e; --surface2: #363d47; --surface3: #414957; --line: #525b6a;
+    --fg: #e6e3da; --muted: #b0b7c3; --frame: #7ab3ea; --ack: #f0a75f; --retx: #7ab3ea; --buf: #b9a3e6;
+    --bad: #ff8aa5; --warn: #e8b04f; --ok: #77d19a; --accent: #7ab3ea; --on-accent: #1c2128;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #262b33; --surface: #2f353e; --surface2: #363d47; --surface3: #414957; --line: #525b6a;
+  --fg: #e6e3da; --muted: #b0b7c3; --frame: #7ab3ea; --ack: #f0a75f; --retx: #7ab3ea; --buf: #b9a3e6;
+  --bad: #ff8aa5; --warn: #e8b04f; --ok: #77d19a; --accent: #7ab3ea; --on-accent: #1c2128;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 16px; line-height: 1.7; padding-inline: 16px; padding-block: 20px 56px; }
+.wrap { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+section { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, select:focus-visible, input:focus-visible, .cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.brand { font-family: var(--f-mono); font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.brand b { color: var(--fg); font-weight: 500; }
+.ghost { background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; font-size: 13px; }
+.ghost:hover { background: var(--surface2); }
+
+h1 { font-family: var(--f-display); font-weight: 700; font-size: clamp(1.7rem, 4.5vw, 2.6rem); line-height: 1.15; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--f-display); font-weight: 700; font-size: clamp(1.3rem, 3vw, 1.7rem); line-height: 1.25; margin: 0; text-wrap: balance; }
+.sub { color: var(--muted); margin: 6px 0 0; max-width: 64ch; }
+.lbl { font-family: var(--f-body); font-size: 13px; font-weight: 500; letter-spacing: 0.02em; color: var(--muted); }
+
+.tools { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.tgroup { display: flex; align-items: center; gap: 8px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { background: var(--surface); border: 0; padding: 7px 13px; font-size: 14.5px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--surface3); font-weight: 500; }
+.seg button[aria-pressed="false"] { color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.chip { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 5px 14px; font-size: 14px; }
+.chip:hover { border-color: var(--accent); }
+.rule { display: inline-flex; align-items: center; gap: 6px; background: var(--surface2); border: 1px solid var(--line); border-radius: 999px; padding: 3px 4px 3px 12px; font-size: 14px; font-family: var(--f-mono); }
+.rule button { background: transparent; border: 0; border-radius: 50%; width: 22px; height: 22px; line-height: 1; color: var(--muted); }
+.rule button:hover { background: var(--surface3); color: var(--bad); }
+.form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+select { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 14.5px; }
+input[type="number"] { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; width: 100%; min-width: 0; font-family: var(--f-mono); font-size: 14px; }
+.btn { background: var(--surface3); border: 1px solid var(--line); border-radius: 8px; padding: 7px 16px; font-size: 14px; }
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 500; }
+
+.wininfo { font-family: var(--f-mono); font-size: 14px; color: var(--muted); padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.wininfo b { color: var(--fg); font-weight: 500; }
+
+.strips { display: grid; gap: 10px; }
+.strip-row { display: grid; grid-template-columns: 110px 1fr; gap: 12px; align-items: center; }
+.strip { display: flex; gap: 5px; flex-wrap: wrap; }
+.cell { width: 36px; height: 42px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); display: grid; place-items: center; position: relative; font-family: var(--f-mono); font-size: 14px; color: var(--muted); transition: background 0.2s, border-color 0.2s; }
+.cell.inwin { border-top: 3px solid var(--fg); }
+.cell.acked, .cell.deliv { background: color-mix(in srgb, var(--ok) 16%, var(--surface)); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+.cell.out { border-color: var(--ack); color: var(--ack); }
+.cell.buf { background: color-mix(in srgb, var(--buf) 22%, var(--surface)); color: var(--buf); border-color: var(--buf); }
+.cell i { position: absolute; left: 4px; right: 4px; bottom: 3px; height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; display: none; }
+.cell i b { display: block; height: 100%; background: var(--ack); }
+.cell.showt i { display: block; }
+.cell.late i b { background: var(--bad); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13.5px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; background: var(--c, var(--line)); }
+
+.dgw { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow-x: auto; }
+.dgin { min-width: 640px; }
+.dgin svg { display: block; width: 100%; height: auto; }
+.dgs { max-height: 520px; overflow-y: auto; border-top: 1px solid var(--line); }
+.axis { stroke: var(--muted); stroke-width: 2; opacity: 0.7; }
+.tick { stroke: var(--line); stroke-width: 1; opacity: 0.6; }
+.tl { font-family: var(--f-mono); font-size: 12.5px; fill: var(--muted); }
+.who { font-family: var(--f-display); font-weight: 700; font-size: 17px; fill: var(--fg); text-anchor: middle; }
+.who2 { font-family: var(--f-mono); font-size: 12.5px; fill: var(--muted); text-anchor: middle; }
+.ln { fill: none; stroke-width: 2.6; stroke-linecap: round; }
+.f .ln { stroke: var(--frame); } .retx .ln { stroke: var(--retx); stroke-dasharray: 7 5; } .a .ln { stroke: var(--ack); }
+.f .lb { fill: var(--frame); } .retx .lb { fill: var(--retx); } .a .lb { fill: var(--ack); }
+.lb { font-family: var(--f-mono); font-size: 13.5px; font-weight: 500; text-anchor: middle; }
+.head { fill: var(--fg); }
+.lost .ln { opacity: 0.5; }
+.xm { stroke: var(--bad); stroke-width: 3.2; stroke-linecap: round; }
+.hit { fill: none; stroke: transparent; stroke-width: 22; pointer-events: stroke; }
+.hit.live { cursor: pointer; }
+.nowl { stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 3 4; opacity: 0.8; }
+.nowt { font-family: var(--f-mono); font-size: 12.5px; fill: var(--accent); }
+.tom { font-family: var(--f-mono); font-size: 13px; fill: var(--bad); text-anchor: end; }
+.donel { stroke: var(--ok); stroke-width: 1.2; stroke-dasharray: 6 4; }
+.donet { font-family: var(--f-mono); font-size: 13px; fill: var(--ok); text-anchor: end; }
+
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.hint { font-size: 14px; color: var(--muted); margin: 0; }
+.hint.flash { color: var(--warn); }
+.tnow { font-family: var(--f-mono); font-size: 14px; color: var(--muted); margin-left: auto; }
+
+.panels { display: grid; grid-template-columns: 1fr 1.25fr; gap: 14px; }
+.panel { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 14px 16px; min-width: 0; }
+.panel h3 { font-family: var(--f-body); font-size: 14px; letter-spacing: 0.02em; color: var(--fg); font-weight: 500; margin: 0 0 10px; }
+.counters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+.counter { display: flex; flex-direction: column; }
+.counter b { font-family: var(--f-display); font-size: 1.7rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.counter span { font-size: 13.5px; color: var(--muted); }
+.tw { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { border-bottom: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { font-weight: 500; color: var(--muted); font-size: 13.5px; }
+td.num, th.num { font-variant-numeric: tabular-nums; }
+.log { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 14.5px; max-height: 320px; overflow-y: auto; }
+.log li { display: grid; grid-template-columns: 52px 1fr; gap: 8px; }
+.log .tm { font-family: var(--f-mono); font-size: 13px; color: var(--muted); padding-top: 1px; }
+.log .bad { color: var(--bad); } .log .ok { color: var(--ok); }
+.log .empty { color: var(--muted); grid-column: 1 / -1; }
+
+.cmp table { min-width: 620px; }
+.cmp th, .cmp td { padding: 9px 12px; }
+.cmp thead th { color: var(--fg); font-family: var(--f-display); font-size: 14.5px; font-weight: 700; }
+.cmp td:first-child { color: var(--muted); white-space: nowrap; }
+.cmp[data-active="sw"] :is(th, td):nth-child(2),
+.cmp[data-active="gbn"] :is(th, td):nth-child(3),
+.cmp[data-active="sr"] :is(th, td):nth-child(4) { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.note { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; background: var(--surface); padding: 10px 14px; margin: 0; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.card { border: 1px solid color-mix(in srgb, var(--warn) 50%, var(--line)); border-radius: 12px; background: var(--surface); padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.card h3 { margin: 0; font-family: var(--f-display); font-size: 1.05rem; line-height: 1.35; }
+.card p { margin: 0; font-size: 15px; }
+.card code, .mono { font-family: var(--f-mono); font-size: 14px; }
+.card .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+.mini { display: flex; flex-direction: column; gap: 4px; font-family: var(--f-mono); font-size: 14px; background: var(--surface2); border-radius: 8px; padding: 8px 10px; }
+.mini input[type="range"] { width: 100%; accent-color: var(--accent); }
+
+.calcs { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); min-width: 0; }
+.field .with { display: flex; gap: 6px; }
+.field select { padding: 5px 4px; }
+pre.steps { margin: 0; padding: 10px 12px; background: var(--surface2); border-radius: 8px; overflow-x: auto; font-family: var(--f-mono); font-size: 14px; line-height: 1.7; color: var(--fg); white-space: pre; }
+.warn { font-size: 14px; color: var(--warn); margin: 0; }
+.foot { font-size: 13.5px; color: var(--muted); margin: 0; }
+
+@media (max-width: 760px) {
+  .panels { grid-template-columns: 1fr; }
+  .strip-row { grid-template-columns: 1fr; gap: 6px; }
+  .fields { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <div class="brand"><b>ARQ Lab</b> &nbsp;/&nbsp; ITDS231 · Lecture 5.2</div>
+    <button class="ghost" id="theme" type="button">โหมดมืด</button>
+  </div>
+
+  <header>
+    <h1>เฟรมหายแล้วไงต่อ ลองทำให้มันหายเอง</h1>
+    <p class="sub">จำลอง Stop-and-Wait, Go-Back-N และ Selective Repeat คลิกเส้นที่กำลังวิ่งเพื่อทำให้เฟรมหรือ ACK หาย แล้วดูว่าผู้ส่งกับผู้รับจัดการกันอย่างไร</p>
+  </header>
+
+  <section id="lab" aria-label="แล็บจำลอง ARQ">
+    <div class="tools">
+      <div class="tgroup"><span class="lbl">โหมด</span>
+        <div class="seg" id="segMode" role="group" aria-label="โหมด ARQ">
+          <button type="button" data-v="sw" aria-pressed="false">Stop-and-Wait</button>
+          <button type="button" data-v="gbn" aria-pressed="true">Go-Back-N</button>
+          <button type="button" data-v="sr" aria-pressed="false">Selective Repeat</button>
+        </div>
+      </div>
+      <div class="tgroup"><span class="lbl" style="text-transform:none">บิต m</span>
+        <div class="seg" id="segM" role="group" aria-label="จำนวนบิตของเลขลำดับ">
+          <button type="button" data-v="2" aria-pressed="false">2</button>
+          <button type="button" data-v="3" aria-pressed="true">3</button>
+          <button type="button" data-v="4" aria-pressed="false">4</button>
+        </div>
+      </div>
+      <div class="tgroup"><span class="lbl">จำนวนเฟรม</span>
+        <div class="seg" id="segN" role="group" aria-label="จำนวนเฟรม">
+          <button type="button" data-v="6" aria-pressed="true">6</button>
+          <button type="button" data-v="8" aria-pressed="false">8</button>
+          <button type="button" data-v="10" aria-pressed="false">10</button>
+        </div>
+      </div>
+      <div class="tgroup"><span class="lbl">ความเร็ว</span>
+        <div class="seg" id="segS" role="group" aria-label="ความเร็วเล่น">
+          <button type="button" data-v="0.8" aria-pressed="false">ช้า</button>
+          <button type="button" data-v="1.4" aria-pressed="true">ปกติ</button>
+          <button type="button" data-v="2.8" aria-pressed="false">เร็ว</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="chips" id="presets">
+      <span class="lbl">ลองสถานการณ์</span>
+      <button class="chip" type="button" data-p="lose2">เฟรม 2 หาย (ลองสลับเป็น SR)</button>
+      <button class="chip" type="button" data-p="ack2">ACK2 หาย แต่ ACK3 มาทัน</button>
+      <button class="chip" type="button" data-p="late">ACK มาช้า เกิดเฟรมซ้ำ (S&amp;W)</button>
+      <button class="chip" type="button" data-p="wrap">เลขลำดับวนรอบ (m = 2)</button>
+    </div>
+
+    <div class="form" id="ruleForm">
+      <span class="lbl">เพิ่มเหตุการณ์</span>
+      <select id="rKind" aria-label="ชนิด"><option value="F">เฟรม</option><option value="A">ACK</option></select>
+      <select id="rIdx" aria-label="ตัวที่"></select>
+      <select id="rEff" aria-label="เกิดอะไรขึ้น"><option value="lose">หาย (ส่งครั้งแรก)</option><option value="delay">ช้า +4 tick</option></select>
+      <button class="btn" type="button" id="rAdd">เพิ่ม</button>
+    </div>
+    <div class="chips" id="ruleChips" aria-live="polite"></div>
+
+    <div class="wininfo" id="wininfo"></div>
+
+    <div class="strips">
+      <div class="strip-row"><span class="lbl">Send window</span><div class="strip" id="stripS"></div></div>
+      <div class="strip-row"><span class="lbl">Receive window</span><div class="strip" id="stripR"></div></div>
+    </div>
+    <div class="legend">
+      <span style="--c:var(--ok)">ส่งถึง/ได้ ACK แล้ว</span>
+      <span style="--c:var(--ack)">ส่งแล้ว รอ ACK (มีแถบ timer)</span>
+      <span style="--c:var(--buf)">ผู้รับเก็บ buffer</span>
+      <span style="--c:var(--fg)">อยู่ใน window (แถบบน)</span>
+    </div>
+
+    <div class="dgw">
+      <div class="dgin">
+        <svg id="dgHead" viewBox="0 0 900 44" aria-hidden="true">
+          <text class="who" x="150" y="20">ผู้ส่ง</text><text class="who2" x="150" y="36">Sender</text>
+          <text class="who" x="750" y="20">ผู้รับ</text><text class="who2" x="750" y="36">Receiver</text>
+        </svg>
+        <div class="dgs" id="dgScroll">
+          <svg id="dg" viewBox="0 0 900 460" role="img" aria-label="แผนภาพเวลาการส่งเฟรมและ ACK ระหว่างผู้ส่งกับผู้รับ"></svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn primary" type="button" id="bPlay">เล่น</button>
+      <button class="btn" type="button" id="bStep">ทีละ tick</button>
+      <button class="btn" type="button" id="bRestart">เล่นใหม่</button>
+      <button class="btn" type="button" id="bClear">ล้างเหตุการณ์</button>
+      <span class="tnow" id="tnow"></span>
+    </div>
+    <p class="hint" id="hint">คลิกเส้นเฟรมหรือ ACK ที่กำลังวิ่งอยู่เพื่อทำให้หาย (กดหยุดก่อนจะคลิกง่ายกว่า) หรือเพิ่มเหตุการณ์จากฟอร์มด้านบน</p>
+
+    <div class="panels">
+      <div class="panel">
+        <h3>ผลของรอบนี้</h3>
+        <div class="counters">
+          <div class="counter"><b id="cSent">0</b><span>เฟรมที่ส่งทั้งหมด</span></div>
+          <div class="counter"><b id="cRetx">0</b><span>ส่งซ้ำ</span></div>
+          <div class="counter"><b id="cTime">0</b><span>เวลารวม (tick)</span></div>
+        </div>
+        <h3>ผลล่าสุดของแต่ละโหมด</h3>
+        <div class="tw">
+          <table>
+            <thead><tr><th>โหมด</th><th class="num">ส่งทั้งหมด</th><th class="num">ซ้ำ</th><th class="num">เวลา</th><th>สถานการณ์</th></tr></thead>
+            <tbody id="results"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>บันทึกเหตุการณ์</h3>
+        <ul class="log" id="log"></ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="compare" aria-label="เทียบ 3 ARQ">
+    <h2>เทียบ 3 ARQ ตารางที่ต้องจำ</h2>
+    <div class="dgw cmp" id="cmp" data-active="gbn">
+      <table>
+        <thead><tr><th>หัวข้อ</th><th>Stop-and-Wait</th><th>Go-Back-N</th><th>Selective Repeat</th></tr></thead>
+        <tbody>
+          <tr><td>Pipelining</td><td>ไม่มี</td><td>มี</td><td>มี</td></tr>
+          <tr><td>Sender window</td><td>1</td><td>≤ 2^m − 1</td><td>≤ 2^(m−1)</td></tr>
+          <tr><td>Receiver window</td><td>1</td><td>1 เสมอ</td><td>≤ 2^(m−1)</td></tr>
+          <tr><td>เฟรมผิดลำดับ</td><td>ไม่มีกรณีนี้</td><td>ทิ้ง ไม่ buffer</td><td>รับไว้ + buffer</td></tr>
+          <tr><td>แบบของ ACK</td><td>positive ACK ทีละตัว</td><td>Cumulative ACK</td><td>Individual ACK + NAK/SREJ</td></tr>
+          <tr><td>Timer</td><td>1 ตัว</td><td>1 ตัว (เฟรมเก่าสุด)</td><td>แยกทุกเฟรม</td></tr>
+          <tr><td>ตอน timeout</td><td>ส่งเฟรมเดิมซ้ำ</td><td>ส่งใหม่ตั้งแต่ตัวเก่าสุด + ที่ตามมาทั้งหมด</td><td>ส่งใหม่เฉพาะเฟรมนั้น</td></tr>
+          <tr><td>ข้อดี</td><td>ง่ายที่สุด</td><td>ผู้รับออกแบบง่าย (window = 1)</td><td>ประหยัด bandwidth ที่สุด</td></tr>
+          <tr><td>ข้อเสีย</td><td>ช้ามาก สายว่างเปล่าเยอะ</td><td>error บ่อย = ส่งซ้ำเยอะ เปลือง bandwidth และเพิ่ม delay</td><td>ผู้รับซับซ้อน ต้องมี buffer + timer หลายตัว</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">คอลัมน์ที่สว่างขึ้นคือโหมดที่เลือกอยู่ในแล็บ</p>
+    <p class="note"><b>สรุปให้จำ:</b> Stop-and-Wait คือกรณีพิเศษของ Go-Back-N ที่ window = 1 และใช้เลขลำดับแค่ 0 กับ 1 &nbsp;·&nbsp; GBN มองเฟรมเป็น "กลุ่ม" ส่วน SR มองเฟรมเป็น "รายตัว"</p>
+  </section>
+
+  <section id="pitfalls" aria-label="หลุมพรางข้อสอบ">
+    <h2>หลุมพรางข้อสอบ</h2>
+    <div class="cards">
+      <div class="card">
+        <h3>1. ขนาด window ของ GBN กับ SR ไม่เหมือนกัน</h3>
+        <p>GBN: sender = 2^m − 1 (เลขคี่เสมอ), receiver = 1 เสมอ<br>SR: sender = receiver = 2^(m−1) (เลขคู่เสมอ)</p>
+        <div class="mini"><label for="mRange">ลองเลื่อน m</label><input type="range" id="mRange" min="1" max="6" value="4"><span id="mOut"></span></div>
+        <div class="row"><button class="chip" type="button" data-p="m4">ดู m = 4 ในแล็บ</button></div>
+      </div>
+      <div class="card">
+        <h3>2. เลข ACK คือ "เฟรมที่รอถัดไป"</h3>
+        <p><code>ACK 1</code> แปลว่าได้ frame 0 แล้ว กำลังรอ frame 1 ไม่ใช่ "ได้ frame 1" และใน GBN ACK เป็นแบบสะสม เช่น <code>ACK 4</code> = ได้ frame 0, 1, 2, 3 ครบแล้ว</p>
+        <div class="row"><button class="chip" type="button" data-p="ack2">ดูเลข ACK ในแล็บ</button></div>
+      </div>
+      <div class="card">
+        <h3>3. "ACK หาย" กับ "เฟรมหาย" ให้ผลต่างกัน</h3>
+        <p>เฟรมหาย: ผู้รับไม่รู้เรื่อง ไม่ตอบอะไร มีแต่ timeout ที่ช่วยได้<br>ACK หาย/ช้า: ข้อมูลถึงแล้ว ผู้รับต้องทิ้งเฟรมซ้ำแต่ยังต้องตอบ ACK ใน GBN ถ้า ACK ตัวถัดไปมาทัน ก็ไม่ต้องส่งใหม่เลย</p>
+        <div class="row"><button class="chip" type="button" data-p="lose2">เฟรมหาย</button><button class="chip" type="button" data-p="ack2">ACK หาย</button><button class="chip" type="button" data-p="late">ACK ช้า</button></div>
+      </div>
+      <div class="card">
+        <h3>4. เลขลำดับต้องวนเป็นวง</h3>
+        <p>ส่ง 20 เฟรมด้วย m = 4 ได้ <code>0, 1, …, 14, 15, 0, 1, 2, 3</code> ไม่ใช่ 16, 17, 18, 19</p>
+        <div class="row"><button class="chip" type="button" data-p="wrap">ดูเลขวนรอบในแล็บ</button></div>
+      </div>
+      <div class="card">
+        <h3>5. อย่าสลับ REJ กับ SREJ</h3>
+        <p>REJ = NAK ของ Go-Back-N · SREJ = NAK ของ Selective Repeat<br>RNR ไม่ใช่ error แต่เป็น flow control (ผู้รับบอกว่า "ได้แล้วนะ แต่ขอพักก่อน")</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="calc" aria-label="เครื่องคิดเลข">
+    <h2>เครื่องคิดเลข ใส่ตัวเลขแล้วดูทีละขั้น</h2>
+    <div class="calcs">
+      <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+        <h3>เวลารวม: Stop-and-Wait เทียบ Go-Back-N</h3>
+        <div class="fields">
+          <label class="field">ระยะทาง (m)<input type="number" id="a_dist" value="1000" min="0" step="any"></label>
+          <label class="field">ความเร็วแพร่สัญญาณ (m/s)<input type="number" id="a_speed" value="500" min="0" step="any"></label>
+          <label class="field">ขนาดเฟรม (bits)<input type="number" id="a_frame" value="100" min="0" step="any"></label>
+          <label class="field">ข้อมูลรวม (bits)<input type="number" id="a_total" value="1000" min="0" step="any"></label>
+          <label class="field">window ของ GBN (N)<input type="number" id="a_n" value="2" min="1" step="1"></label>
+        </div>
+        <div class="chips"><button class="chip" type="button" id="a_ex">โหลดตัวอย่างจากสไลด์</button></div>
+        <pre class="steps" id="a_out"></pre>
+        <p class="warn">โจทย์ที่บอก "ไม่คิด transmission delay" ให้ใช้แค่ propagation delay ในการหา RTT</p>
+      </div>
+      <div class="panel" style="display:flex;flex-direction:column;gap:12px">
+        <h3>Bandwidth-Delay Product และ Utilization</h3>
+        <div class="fields">
+          <label class="field">Bandwidth<span class="with"><input type="number" id="b_bw" value="1" min="0" step="any"><select id="b_bwu" aria-label="หน่วย bandwidth"><option value="1">bps</option><option value="1e3">kbps</option><option value="1e6" selected>Mbps</option><option value="1e9">Gbps</option></select></span></label>
+          <label class="field">RTT<span class="with"><input type="number" id="b_rtt" value="20" min="0" step="any"><select id="b_rttu" aria-label="หน่วย RTT"><option value="1e-3" selected>ms</option><option value="1">s</option></select></span></label>
+          <label class="field">ขนาดเฟรม (bits)<input type="number" id="b_frame" value="1000" min="0" step="any"></label>
+          <label class="field">window ที่ใช้ (เฟรม)<input type="number" id="b_w" value="15" min="1" step="1"></label>
+        </div>
+        <div class="chips"><button class="chip" type="button" id="b_ex1">1 Mbps / 20 ms</button><button class="chip" type="button" id="b_ex2">2 Mbps / 10 ms</button></div>
+        <pre class="steps" id="b_out"></pre>
+        <p class="warn">ระวังหน่วย: ms → sec หาร 1000 · Mbps → bps คูณ 10⁶</p>
+      </div>
+    </div>
+  </section>
+
+  <p class="foot">สรุปจากสไลด์ ITDS231 Lecture 5.2 (Flow Control, ARQ &amp; HDLC) ตัวจำลองใช้เวลาเป็น tick: ส่ง 1 เฟรมต่อ tick, เดินทางทางเดียว 3 tick, timeout 8 tick ส่วน HDLC ยังไม่รวมในหน้านี้</p>
+</div>
+
+<script>
+/* ARQ engine: pure logic, no DOM. Used by the page (inlined) and by node tests. */
+function windowSizes(mode, m) {
+  if (mode === 'sw') return { M: 2, ws: 1, wr: 1 };
+  var M = Math.pow(2, m);
+  if (mode === 'gbn') return { M: M, ws: M - 1, wr: 1 };
+  return { M: M, ws: M / 2, wr: M / 2 };
+}
+
+function createSim(cfg) {
+  var D = cfg.D || 3, TO = cfg.TO || 8, maxT = cfg.maxT || 300;
+  var mode = cfg.mode, N = cfg.N;
+  var W = windowSizes(mode, cfg.m);
+  var M = W.M, ws = W.ws, wr = W.wr;
+  var rules = cfg.rules || [];
+
+  var s = {
+    cfg: cfg, M: M, ws: ws, wr: wr, D: D, TO: TO, N: N,
+    t: -1, txs: [], log: [], timeouts: [], done: false, doneT: null,
+    sender: { base: 0, next: 0, acked: [], lastSend: [], sentCount: [], queue: [] },
+    recv: { expected: 0, buffer: [], delivered: 0 },
+    stats: { frames: 0, retx: 0 },
+    attempts: {}
+  };
+  for (var i = 0; i < N + 1; i++) {
+    s.sender.acked.push(false); s.sender.lastSend.push(null); s.sender.sentCount.push(0);
+    s.recv.buffer.push(false);
+  }
+  var sd = s.sender, rc = s.recv;
+
+  function say(t, cls, text) { s.log.push({ t: t, cls: cls, text: text }); }
+
+  function makeTx(kind, idx, sendT, retx) {
+    var key = kind + idx;
+    s.attempts[key] = (s.attempts[key] || 0) + 1;
+    var attempt = s.attempts[key], extra = 0, lost = false;
+    for (var k = 0; k < rules.length; k++) {
+      var r = rules[k];
+      if (r.kind === kind && r.idx === idx && r.attempt === attempt) {
+        if (r.lose) lost = true;
+        if (r.delay) extra += r.delay;
+      }
+    }
+    var tx = { id: s.txs.length, kind: kind, idx: idx, num: idx % M, sendT: sendT, arriveT: sendT + D + extra,
+      lost: lost, retx: !!retx, attempt: attempt, handled: false, delayed: extra };
+    s.txs.push(tx);
+    return tx;
+  }
+
+  function ack(idx, t) { makeTx('A', idx, t, false); }
+
+  function recvFrame(tx, t) {
+    var idx = tx.idx, n = tx.num;
+    if (mode === 'sr') {
+      if (idx >= rc.expected && idx < rc.expected + wr) {
+        rc.buffer[idx] = true;
+        if (idx !== rc.expected) say(t, '', 'ผู้รับได้ F' + n + ' มาก่อนคิว เก็บไว้ใน buffer แล้วรอ F' + (rc.expected % M));
+        ack(idx, t);
+        while (rc.buffer[rc.expected]) { rc.expected++; rc.delivered++; }
+      } else if (idx < rc.expected) {
+        say(t, '', 'ผู้รับได้ F' + n + ' ซ้ำ ทิ้งเฟรมนี้ แต่ตอบ ACK ' + n + ' อีกครั้ง');
+        ack(idx, t);
+      } else {
+        say(t, 'bad', 'ผู้รับทิ้ง F' + n + ' เพราะอยู่นอก receive window');
+      }
+    } else if (idx === rc.expected) {
+      rc.expected++; rc.delivered++;
+      ack(rc.expected, t);
+    } else if (idx < rc.expected) {
+      say(t, '', 'ผู้รับได้ F' + n + ' ซ้ำ (ดูจากเลขลำดับ) ทิ้งเฟรมนี้ แต่ตอบ ACK ' + (rc.expected % M) + ' อีกครั้ง');
+      ack(rc.expected, t);
+    } else {
+      say(t, 'bad', 'ผู้รับทิ้ง F' + n + ' เพราะมาผิดลำดับ (รอ F' + (rc.expected % M) + ', receive window = 1) และไม่ตอบอะไร');
+    }
+  }
+
+  function recvAck(tx, t) {
+    var n = tx.num;
+    if (mode === 'sr') {
+      if (tx.idx < N && !sd.acked[tx.idx]) {
+        sd.acked[tx.idx] = true;
+      } else {
+        say(t, '', 'ผู้ส่งได้ ACK ' + n + ' ซ้ำ ไม่ทำอะไร');
+      }
+      while (sd.base < N && sd.acked[sd.base]) sd.base++;
+    } else if (tx.idx > sd.base) {
+      var jump = tx.idx - sd.base;
+      for (var i = sd.base; i < tx.idx; i++) sd.acked[i] = true;
+      sd.base = tx.idx;
+      if (sd.next < sd.base) sd.next = sd.base;
+      if (jump > 1) say(t, 'ok', 'ผู้ส่งได้ ACK ' + n + ' (cumulative) ยืนยัน ' + jump + ' เฟรมพร้อมกัน');
+    } else {
+      say(t, '', 'ผู้ส่งได้ ACK ' + n + ' เก่า (ช้า/ซ้ำ) ดูจากเลข ACK แล้วทิ้ง');
+    }
+    if (sd.base >= N && !s.done) { s.done = true; s.doneT = t; say(t, 'ok', 'ส่งครบทุกเฟรมและได้ ACK ครบแล้ว'); }
+  }
+
+  function checkTimeouts(t) {
+    var i;
+    if (mode === 'sr') {
+      for (i = sd.base; i < Math.min(sd.next, N); i++) {
+        if (!sd.acked[i] && sd.lastSend[i] !== null && sd.queue.indexOf(i) < 0 && sd.lastSend[i] + TO <= t) {
+          sd.queue.push(i);
+          s.timeouts.push({ t: t, idx: i });
+          say(t, 'bad', 'timer ของ F' + (i % M) + ' หมดเวลา → ส่งใหม่เฉพาะ F' + (i % M));
+        }
+      }
+    } else if (sd.base < sd.next && sd.base < N && sd.lastSend[sd.base] !== null && sd.lastSend[sd.base] + TO <= t) {
+      var from = sd.base, to = sd.next - 1, list = [];
+      for (i = from; i <= to; i++) list.push('F' + (i % M));
+      s.timeouts.push({ t: t, idx: from });
+      if (mode === 'sw') say(t, 'bad', 'timeout: ไม่ได้ ACK ของ F' + (from % M) + ' → ส่ง F' + (from % M) + ' ซ้ำ');
+      else say(t, 'bad', 'timeout ที่เฟรมเก่าสุด F' + (from % M) + ' → ย้อนกลับ ส่งใหม่ ' + list.join(', ') + ' (' + list.length + ' เฟรม)');
+      sd.next = from;
+    }
+  }
+
+  function sendPhase(t) {
+    if (s.done) return;
+    var idx = null;
+    if (mode === 'sr') {
+      while (sd.queue.length && idx === null) {
+        var q = sd.queue.shift();
+        if (!sd.acked[q]) idx = q;
+      }
+    }
+    if (idx === null && sd.next < N && sd.next - sd.base < ws) { idx = sd.next; sd.next++; }
+    if (idx === null) return;
+    sd.lastSend[idx] = t; sd.sentCount[idx]++;
+    var retx = sd.sentCount[idx] > 1;
+    s.stats.frames++;
+    if (retx) s.stats.retx++;
+    makeTx('F', idx, t, retx);
+  }
+
+  function processTick(t) {
+    var i, tx;
+    for (i = 0; i < s.txs.length; i++) {
+      tx = s.txs[i];
+      if (tx.kind === 'A' && !tx.handled && tx.arriveT === t) {
+        tx.handled = true;
+        if (tx.lost) say(t, 'bad', 'ACK ' + tx.num + ' หายระหว่างทาง');
+        else recvAck(tx, t);
+      }
+    }
+    for (i = 0; i < s.txs.length; i++) {
+      tx = s.txs[i];
+      if (tx.kind === 'F' && !tx.handled && tx.arriveT === t) {
+        tx.handled = true;
+        if (tx.lost) say(t, 'bad', 'F' + tx.num + (tx.retx ? ' (ส่งซ้ำ)' : '') + ' หายระหว่างทาง ผู้รับไม่รู้เรื่อง จึงไม่ตอบอะไร');
+        else recvFrame(tx, t);
+      }
+    }
+    if (s.done) return;
+    checkTimeouts(t);
+    sendPhase(t);
+  }
+
+  s.advanceTo = function (target) {
+    while (!s.done && s.t + 1 <= target && s.t + 1 <= maxT) { s.t++; processTick(s.t); }
+  };
+  s.toggleLoss = function (id, now) {
+    var tx = s.txs[id];
+    if (tx && !tx.handled && tx.sendT <= now && now < tx.arriveT) { tx.lost = !tx.lost; return true; }
+    return false;
+  };
+  s.runToEnd = function () { s.advanceTo(maxT); return { done: s.done, doneT: s.doneT, frames: s.stats.frames, retx: s.stats.retx }; };
+  return s;
+}
+
+function r9(x) { return Math.round(x * 1e9) / 1e9; }
+
+function calcTime(p) {
+  var rtt = r9(2 * p.dist / p.speed);
+  var frames = Math.ceil(r9(p.totalBits / p.frameBits));
+  var rounds = Math.ceil(r9(frames / p.n));
+  return { rtt: rtt, frames: frames, sw: r9(frames * rtt), rounds: rounds, gbn: r9(rounds * rtt) };
+}
+
+function calcBdp(p) {
+  var bdp = r9(p.bw * p.rtt);
+  return { bdp: bdp, uSw: r9(p.frameBits / bdp), uW: r9(p.w * p.frameBits / bdp), need: Math.ceil(r9(bdp / p.frameBits)) };
+}
+
+if (typeof module !== 'undefined') module.exports = { windowSizes: windowSizes, createSim: createSim, calcTime: calcTime, calcBdp: calcBdp };
+
+</script>
+<script>
+(function () {
+  var $ = function (s) { return document.querySelector(s); };
+  var NS = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs, parent) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function fmt(x) {
+    if (!isFinite(x)) return '—';
+    var r = Math.round(x * 1e6) / 1e6;
+    return r.toLocaleString('en-US', { maximumFractionDigits: 6 });
+  }
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* ---------- theme ---------- */
+  var root = document.documentElement, tbtn = $('#theme');
+  function eff() {
+    var a = root.getAttribute('data-theme');
+    if (a) return a;
+    return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  function syncTheme() { tbtn.textContent = eff() === 'dark' ? 'โหมดสว่าง' : 'โหมดมืด'; }
+  try { var st = localStorage.getItem('theme-arqlab'); if (st) root.setAttribute('data-theme', st); } catch (e) {}
+  tbtn.addEventListener('click', function () {
+    var n = eff() === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', n);
+    try { localStorage.setItem('theme-arqlab', n); } catch (e) {}
+    syncTheme();
+  });
+  syncTheme();
+
+  /* ---------- state ---------- */
+  var MODE_NAME = { sw: 'Stop-and-Wait', gbn: 'Go-Back-N', sr: 'Selective Repeat' };
+  var state = { mode: 'gbn', m: 3, N: 6, rules: [], speed: 1.4, playing: false, now: 0, label: 'เฟรม 2 หาย' };
+  var results = {};
+  var PRESETS = {
+    lose2: { mode: 'gbn', m: 3, N: 6, label: 'เฟรม 2 หาย', rules: [{ kind: 'F', idx: 2, attempt: 1, lose: true }] },
+    ack2:  { mode: 'gbn', m: 3, N: 6, label: 'ACK2 หาย', rules: [{ kind: 'A', idx: 2, attempt: 1, lose: true }] },
+    late:  { mode: 'sw',  m: 3, N: 6, label: 'ACK มาช้า', rules: [{ kind: 'A', idx: 1, attempt: 1, delay: 4 }] },
+    wrap:  { mode: 'gbn', m: 2, N: 8, label: 'เลขวนรอบ', rules: [] },
+    m4:    { mode: 'gbn', m: 4, N: 10, label: 'ไม่มี error', rules: [] }
+  };
+  var sim = null;
+
+  /* ---------- diagram ---------- */
+  var SX = 150, RX = 750, PPT = 34, TOP = 22, W = 900;
+  function Y(t) { return TOP + t * PPT; }
+  var svg = $('#dg'), tmap = {}, gridMax = -1, curH = 0, gGrid, gTx, gMarks, nowL, nowT, doneL, doneT2, tomarks = [];
+
+  function buildSvg() {
+    svg.innerHTML = '';
+    tmap = {}; gridMax = -1; curH = 0; tomarks = [];
+    gGrid = el('g', {}, svg);
+    el('line', { class: 'axis', x1: SX, y1: 0, x2: SX, y2: 4000 }, svg);
+    el('line', { class: 'axis', x1: RX, y1: 0, x2: RX, y2: 4000 }, svg);
+    gTx = el('g', {}, svg);
+    gMarks = el('g', {}, svg);
+    nowL = el('line', { class: 'nowl', x1: 40, x2: W - 10 }, svg);
+    nowT = el('text', { class: 'nowt', x: W - 12, text: '' }, svg);
+    nowT.setAttribute('text-anchor', 'end');
+    doneL = el('line', { class: 'donel', x1: 40, x2: W - 10, visibility: 'hidden' }, svg);
+    doneT2 = el('text', { class: 'donet', x: W - 12, visibility: 'hidden' }, svg);
+  }
+
+  function makeTxEl(tx) {
+    var cls = tx.kind === 'A' ? 'a' : (tx.retx ? 'retx' : 'f');
+    var g = el('g', { class: 'tx ' + cls }, gTx);
+    var x0 = tx.kind === 'F' ? SX : RX, x1 = tx.kind === 'F' ? RX : SX;
+    var y0 = Y(tx.sendT), y1 = Y(tx.arriveT);
+    var o = { tx: tx, x0: x0, y0: y0, x1: x1, y1: y1, g: g };
+    o.hit = el('line', { class: 'hit', x1: x0, y1: y0, x2: x1, y2: y1, 'data-id': tx.id }, g);
+    o.ln = el('line', { class: 'ln', x1: x0, y1: y0, x2: x0, y2: y0 }, g);
+    var lp = tx.kind === 'F' ? 0.27 : 0.27;
+    var lx = x0 + (x1 - x0) * lp, ly = y0 + (y1 - y0) * lp;
+    o.lb = el('text', { class: 'lb', x: lx, y: ly - 8 }, g);
+    o.lb.textContent = tx.kind === 'F' ? ('F' + tx.num + (tx.retx ? ' ↻' : '')) : ('ACK ' + tx.num + (tx.delayed ? ' ช้า' : ''));
+    o.head = el('circle', { class: 'head', r: 5, cx: x0, cy: y0 }, g);
+    o.xm = el('path', { class: 'xm', visibility: 'hidden' }, g);
+    return o;
+  }
+
+  function updateSvg() {
+    var tMax = Math.max(12, state.now + 5, sim.done ? sim.doneT + 3 : 0);
+    var H = Y(Math.ceil(tMax)) + 16;
+    if (H !== curH) { svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); curH = H; }
+    for (var t = gridMax + 1; t <= Math.ceil(tMax); t++) {
+      el('line', { class: 'tick', x1: 40, y1: Y(t), x2: W - 10, y2: Y(t) }, gGrid);
+      var tt = el('text', { class: 'tl', x: 12, y: Y(t) + 4 }, gGrid); tt.textContent = t;
+      gridMax = t;
+    }
+    var i, o;
+    for (i = 0; i < sim.txs.length; i++) {
+      var tx = sim.txs[i];
+      if (tx.sendT > state.now) continue;
+      o = tmap[tx.id];
+      if (!o) o = tmap[tx.id] = makeTxEl(tx);
+      var p = Math.min(1, (state.now - tx.sendT) / (tx.arriveT - tx.sendT));
+      var lostP = 0.55, endP = tx.lost ? Math.min(p, lostP) : p;
+      var ex = o.x0 + (o.x1 - o.x0) * endP, ey = o.y0 + (o.y1 - o.y0) * endP;
+      o.ln.setAttribute('x2', ex); o.ln.setAttribute('y2', ey);
+      var hx = o.x0 + (o.x1 - o.x0) * p, hy = o.y0 + (o.y1 - o.y0) * p;
+      var showHead = p < 1 && !(tx.lost && p >= lostP);
+      o.head.setAttribute('visibility', showHead ? 'visible' : 'hidden');
+      o.head.setAttribute('cx', hx); o.head.setAttribute('cy', hy);
+      var showX = tx.lost && p >= lostP;
+      o.xm.setAttribute('visibility', showX ? 'visible' : 'hidden');
+      if (showX) {
+        var cx = o.x0 + (o.x1 - o.x0) * lostP, cy = o.y0 + (o.y1 - o.y0) * lostP;
+        o.xm.setAttribute('d', 'M' + (cx - 8) + ' ' + (cy - 8) + ' L' + (cx + 8) + ' ' + (cy + 8) + ' M' + (cx + 8) + ' ' + (cy - 8) + ' L' + (cx - 8) + ' ' + (cy + 8));
+      }
+      var live = !tx.handled && state.now < tx.arriveT;
+      o.hit.setAttribute('class', 'hit' + (live ? ' live' : ''));
+      o.g.setAttribute('class', 'tx ' + (tx.kind === 'A' ? 'a' : (tx.retx ? 'retx' : 'f')) + (tx.lost ? ' lost' : ''));
+    }
+    for (i = 0; i < sim.timeouts.length; i++) {
+      var to = sim.timeouts[i];
+      if (to.t > state.now || tomarks[i]) continue;
+      var tm = el('text', { class: 'tom', x: SX - 12, y: Y(to.t) + 4 }, gMarks);
+      tm.textContent = 'timeout F' + (to.idx % sim.M);
+      tomarks[i] = tm;
+    }
+    nowL.setAttribute('y1', Y(state.now)); nowL.setAttribute('y2', Y(state.now));
+    nowT.setAttribute('y', Y(state.now) - 4); nowT.textContent = 't = ' + Math.floor(state.now);
+    if (sim.done && state.now >= sim.doneT) {
+      doneL.setAttribute('visibility', 'visible'); doneT2.setAttribute('visibility', 'visible');
+      doneL.setAttribute('y1', Y(sim.doneT)); doneL.setAttribute('y2', Y(sim.doneT));
+      doneT2.setAttribute('y', Y(sim.doneT) + 14); doneT2.textContent = 'ส่งครบที่ t = ' + sim.doneT;
+    } else { doneL.setAttribute('visibility', 'hidden'); doneT2.setAttribute('visibility', 'hidden'); }
+    if (state.playing) {
+      var sc = $('#dgScroll'), ratio = sc.scrollHeight / curH;
+      var target = Y(state.now) * ratio - sc.clientHeight * 0.65;
+      if (target > sc.scrollTop) sc.scrollTop = target;
+    }
+  }
+
+  svg.addEventListener('click', function (e) {
+    var t = e.target.closest ? e.target.closest('[data-id]') : null;
+    if (!t) return;
+    var id = Number(t.getAttribute('data-id')), tx = sim.txs[id];
+    if (!tx) return;
+    if (sim.toggleLoss(id, state.now)) {
+      var k = -1;
+      for (var i = 0; i < state.rules.length; i++) {
+        var r = state.rules[i];
+        if (r.kind === tx.kind && r.idx === tx.idx && r.attempt === tx.attempt && r.lose) k = i;
+      }
+      if (tx.lost && k < 0) state.rules.push({ kind: tx.kind, idx: tx.idx, attempt: tx.attempt, lose: true });
+      if (!tx.lost && k >= 0) state.rules.splice(k, 1);
+      state.label = 'กำหนดเอง';
+      renderRules(); dirty = true;
+    } else {
+      flashHint('คลิกได้เฉพาะเส้นที่กำลังวิ่งอยู่ (เส้นที่ถึงปลายทางแล้วแก้ไม่ได้) ลองกดหยุดก่อนแล้วคลิกใหม่');
+    }
+  });
+
+  var hintTimer = 0;
+  function flashHint(msg) {
+    var h = $('#hint'); h.textContent = msg; h.classList.add('flash');
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(function () {
+      h.textContent = HINT; h.classList.remove('flash');
+    }, 3800);
+  }
+  var HINT = $('#hint').textContent;
+
+  /* ---------- window strips ---------- */
+  var cellsS = [], cellsR = [];
+  function buildStrips() {
+    var s = $('#stripS'), r = $('#stripR');
+    s.innerHTML = ''; r.innerHTML = ''; cellsS = []; cellsR = [];
+    for (var i = 0; i < state.N; i++) {
+      var c = document.createElement('div'); c.className = 'cell'; c.innerHTML = '<span></span><i><b></b></i>';
+      c.firstChild.textContent = i % sim.M; s.appendChild(c); cellsS.push(c);
+      var d = document.createElement('div'); d.className = 'cell'; d.innerHTML = '<span></span>';
+      d.firstChild.textContent = i % sim.M; r.appendChild(d); cellsR.push(d);
+    }
+  }
+  function updateStrips() {
+    var sd = sim.sender, rc = sim.recv, i, c, cls;
+    for (i = 0; i < state.N; i++) {
+      c = cellsS[i]; cls = 'cell';
+      if (i >= sd.base && i < sd.base + sim.ws) cls += ' inwin';
+      var out = sd.sentCount[i] > 0 && !sd.acked[i];
+      if (sd.acked[i]) cls += ' acked'; else if (out) cls += ' out';
+      var showT = out && (sim.cfg.mode === 'sr' || i === sd.base);
+      if (showT) {
+        var pct = Math.min(1, Math.max(0, (state.now - sd.lastSend[i]) / sim.TO));
+        c.querySelector('b').style.width = (pct * 100) + '%';
+        cls += ' showt' + (pct >= 1 ? ' late' : '');
+      }
+      if (c.className !== cls) c.className = cls;
+      c = cellsR[i]; cls = 'cell';
+      if (sim.cfg.mode === 'sr') {
+        if (i < rc.expected) cls += ' deliv'; else if (rc.buffer[i]) cls += ' buf';
+      } else if (i < rc.expected) cls += ' deliv';
+      if (i >= rc.expected && i < rc.expected + sim.wr) cls += ' inwin';
+      if (c.className !== cls) c.className = cls;
+    }
+  }
+  function updateInfo() {
+    var m = state.m, M = sim.M, t;
+    if (state.mode === 'sw') t = '<b>Stop-and-Wait</b> · เลขลำดับ 0/1 · Ws = <b>1</b> · Wr = <b>1</b> · ส่งทีละเฟรมแล้วรอ ACK';
+    else if (state.mode === 'gbn') t = '<b>Go-Back-N</b> · m = ' + m + ' → เลขลำดับ ' + M + ' ตัว (0–' + (M - 1) + ') · Ws = 2^' + m + ' − 1 = <b>' + sim.ws + '</b> · Wr = <b>1</b>';
+    else t = '<b>Selective Repeat</b> · m = ' + m + ' → เลขลำดับ ' + M + ' ตัว (0–' + (M - 1) + ') · Ws = Wr = 2^' + (m - 1) + ' = <b>' + sim.ws + '</b>';
+    $('#wininfo').innerHTML = t;
+    $('#cmp').setAttribute('data-active', state.mode);
+  }
+
+  /* ---------- rules ---------- */
+  function ruleText(r) {
+    var M = sim ? sim.M : Math.pow(2, state.m);
+    var n = r.idx % M, extra = r.idx >= M ? ' (ตัวที่ ' + r.idx + ')' : '';
+    var what = r.kind === 'F' ? 'เฟรม ' + n : 'ACK ' + n;
+    return what + extra + ' ' + (r.lose ? 'หาย' : 'ช้า +' + r.delay) + (r.attempt > 1 ? ' · ครั้งที่ ' + r.attempt : '');
+  }
+  function renderRules() {
+    var box = $('#ruleChips');
+    box.innerHTML = '';
+    if (!state.rules.length) {
+      var e = document.createElement('span'); e.className = 'hint'; e.textContent = 'ยังไม่มีเหตุการณ์ผิดปกติ (ทุกอย่างส่งถึง)'; box.appendChild(e);
+      return;
+    }
+    state.rules.forEach(function (r, i) {
+      var s = document.createElement('span'); s.className = 'rule';
+      var t = document.createElement('span'); t.textContent = ruleText(r);
+      var b = document.createElement('button'); b.type = 'button'; b.textContent = '×'; b.setAttribute('aria-label', 'ลบเหตุการณ์ ' + ruleText(r));
+      b.addEventListener('click', function () { state.rules.splice(i, 1); state.label = 'กำหนดเอง'; restart(true); });
+      s.appendChild(t); s.appendChild(b); box.appendChild(s);
+    });
+  }
+  function fillIdx() {
+    var sel = $('#rIdx'), M = Math.pow(2, state.mode === 'sw' ? 1 : state.m), keep = sel.value;
+    sel.innerHTML = '';
+    for (var i = 0; i <= state.N; i++) {
+      var o = document.createElement('option'); o.value = i;
+      o.textContent = 'ตัวที่ ' + i + (M < state.N ? ' (เลข ' + (i % M) + ')' : '');
+      sel.appendChild(o);
+    }
+    if (keep !== '' && Number(keep) <= state.N) sel.value = keep;
+  }
+  $('#rAdd').addEventListener('click', function () {
+    var kind = $('#rKind').value, idx = Number($('#rIdx').value), eff = $('#rEff').value;
+    var r = { kind: kind, idx: idx, attempt: 1 };
+    if (eff === 'lose') r.lose = true; else r.delay = 4;
+    state.rules.push(r); state.label = 'กำหนดเอง';
+    restart(true);
+  });
+  $('#bClear').addEventListener('click', function () { state.rules = []; state.label = 'ไม่มี error'; restart(true); });
+
+  /* ---------- run control ---------- */
+  var dirty = true, lastTs = 0;
+  function restart(play, instant) {
+    sim = createSim({ mode: state.mode, m: state.m, N: state.N, rules: state.rules });
+    buildSvg(); buildStrips(); updateInfo(); fillIdx(); renderRules();
+    $('#dgScroll').scrollTop = 0;
+    if (instant) { sim.advanceTo(300); state.now = sim.doneT || sim.t; state.playing = false; recordResult(); }
+    else { state.now = 0; sim.advanceTo(0); state.playing = !!play; }
+    syncButtons(); dirty = true;
+  }
+  function recordResult() {
+    if (!sim.done) return;
+    results[state.mode] = { frames: sim.stats.frames, retx: sim.stats.retx, time: sim.doneT, label: state.label };
+    renderResults();
+  }
+  function renderResults() {
+    var h = '';
+    ['sw', 'gbn', 'sr'].forEach(function (k) {
+      var r = results[k];
+      h += '<tr><td>' + MODE_NAME[k] + '</td>' + (r
+        ? '<td class="num">' + r.frames + '</td><td class="num">' + r.retx + '</td><td class="num">' + r.time + '</td><td>' + r.label + '</td>'
+        : '<td class="num">—</td><td class="num">—</td><td class="num">—</td><td>ยังไม่ได้ลอง</td>') + '</tr>';
+    });
+    $('#results').innerHTML = h;
+  }
+  function syncButtons() {
+    var atEnd = sim.done && state.now >= sim.doneT;
+    $('#bPlay').textContent = state.playing ? 'หยุด' : (atEnd ? 'เล่นซ้ำ' : 'เล่น');
+    $('#bStep').disabled = atEnd;
+    function seg(id, val) {
+      document.querySelectorAll(id + ' button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-v') === String(val))); });
+    }
+    seg('#segMode', state.mode); seg('#segM', state.m); seg('#segN', state.N); seg('#segS', state.speed);
+    document.querySelectorAll('#segM button').forEach(function (b) { b.disabled = state.mode === 'sw'; });
+  }
+  $('#bPlay').addEventListener('click', function () {
+    var atEnd = sim.done && state.now >= sim.doneT;
+    if (atEnd) { restart(true); return; }
+    state.playing = !state.playing; syncButtons(); dirty = true;
+  });
+  $('#bStep').addEventListener('click', function () {
+    state.playing = false;
+    state.now = Math.floor(state.now) + 1;
+    sim.advanceTo(Math.floor(state.now));
+    if (sim.done && state.now > sim.doneT) state.now = sim.doneT;
+    checkFinish(); syncButtons(); dirty = true;
+  });
+  $('#bRestart').addEventListener('click', function () { restart(true); });
+  function bindSeg(id, key, num) {
+    $(id).addEventListener('click', function (e) {
+      var b = e.target.closest('button'); if (!b || b.disabled) return;
+      var v = num ? Number(b.getAttribute('data-v')) : b.getAttribute('data-v');
+      if (key === 'speed') { state.speed = v; syncButtons(); return; }
+      state[key] = v; restart(true);
+    });
+  }
+  bindSeg('#segMode', 'mode', false); bindSeg('#segM', 'm', true); bindSeg('#segN', 'N', true); bindSeg('#segS', 'speed', true);
+
+  function loadPreset(name, opts) {
+    var p = PRESETS[name]; if (!p) return;
+    state.mode = p.mode; state.m = p.m; state.N = p.N; state.label = p.label;
+    state.rules = p.rules.map(function (r) { return JSON.parse(JSON.stringify(r)); });
+    restart(true);
+    if (opts && opts.scroll) {
+      var lab = $('#lab');
+      lab.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    }
+  }
+  document.querySelectorAll('[data-p]').forEach(function (b) {
+    b.addEventListener('click', function () { loadPreset(b.getAttribute('data-p'), { scroll: !$('#presets').contains(b) }); });
+  });
+
+  function checkFinish() {
+    if (sim.done && state.now >= sim.doneT) {
+      state.now = sim.doneT;
+      if (state.playing) { state.playing = false; }
+      recordResult(); syncButtons();
+    }
+  }
+
+  var lastLog = '', lastCnt = '';
+  function updatePanels() {
+    var c = sim.stats.frames + '|' + sim.stats.retx + '|' + (sim.done && state.now >= sim.doneT ? sim.doneT : Math.floor(state.now));
+    if (c !== lastCnt) {
+      lastCnt = c;
+      $('#cSent').textContent = sim.stats.frames; $('#cRetx').textContent = sim.stats.retx;
+      $('#cTime').textContent = sim.done && state.now >= sim.doneT ? sim.doneT : Math.floor(state.now);
+    }
+    var items = sim.log.filter(function (l) { return l.t <= state.now; }).slice(-14).reverse();
+    var h = items.length ? items.map(function (l) {
+      return '<li><span class="tm">t=' + l.t + '</span><span class="' + l.cls + '">' + l.text + '</span></li>';
+    }).join('') : '<li><span class="empty">กด "เล่น" เพื่อเริ่ม เหตุการณ์สำคัญจะขึ้นที่นี่</span></li>';
+    if (h !== lastLog) { lastLog = h; $('#log').innerHTML = h; }
+    $('#tnow').textContent = 't = ' + Math.floor(state.now) + ' tick';
+  }
+
+  function frame(ts) {
+    var dt = lastTs ? Math.min(0.1, (ts - lastTs) / 1000) : 0; lastTs = ts;
+    if (state.playing) {
+      state.now += dt * state.speed * (reduce ? 3 : 1);
+      sim.advanceTo(Math.floor(state.now));
+      checkFinish(); dirty = true;
+    }
+    if (dirty) {
+      dirty = false;
+      updateSvg(); updateStrips(); updatePanels();
+    }
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------- pitfalls mini ---------- */
+  function updateM() {
+    var m = Number($('#mRange').value), M = Math.pow(2, m);
+    $('#mOut').textContent = 'm = ' + m + ' → เลขลำดับ ' + M + ' ตัว (0–' + (M - 1) + ') · GBN ' + (M - 1) + ' / 1 · SR ' + (M / 2) + ' / ' + (M / 2);
+  }
+  $('#mRange').addEventListener('input', updateM); updateM();
+
+  /* ---------- calculators ---------- */
+  function num(id) { var v = $(id).value; return v === '' ? NaN : Number(v); }
+  function calcA() {
+    var p = { dist: num('#a_dist'), speed: num('#a_speed'), frameBits: num('#a_frame'), totalBits: num('#a_total'), n: num('#a_n') };
+    var out = $('#a_out');
+    if (!(p.dist >= 0 && p.speed > 0 && p.frameBits > 0 && p.totalBits > 0 && p.n >= 1)) { out.textContent = 'กรอกตัวเลขให้ครบ (ความเร็ว ขนาดเฟรม ข้อมูล และ N ต้องมากกว่า 0)'; return; }
+    var r = calcTime(p);
+    out.textContent =
+      'RTT = 2 × ' + fmt(p.dist) + ' / ' + fmt(p.speed) + ' = ' + fmt(r.rtt) + ' วินาที\n' +
+      'จำนวนเฟรม = ' + fmt(p.totalBits) + ' / ' + fmt(p.frameBits) + ' = ' + fmt(r.frames) + ' เฟรม\n\n' +
+      'Stop-and-Wait\n  ' + fmt(r.frames) + ' × ' + fmt(r.rtt) + ' = ' + fmt(r.sw) + ' วินาที\n\n' +
+      'Go-Back-N (N = ' + fmt(p.n) + ')\n  จำนวนรอบ = ' + fmt(r.frames) + ' / ' + fmt(p.n) + ' = ' + fmt(r.rounds) + ' รอบ\n  ' + fmt(r.rounds) + ' × ' + fmt(r.rtt) + ' = ' + fmt(r.gbn) + ' วินาที';
+  }
+  function calcB() {
+    var bwv = num('#b_bw'), bwu = Number($('#b_bwu').value), rv = num('#b_rtt'), ru = Number($('#b_rttu').value);
+    var frameBits = num('#b_frame'), w = num('#b_w'), out = $('#b_out');
+    if (!(bwv > 0 && rv > 0 && frameBits > 0 && w >= 1)) { out.textContent = 'กรอกตัวเลขให้ครบ (ทุกช่องต้องมากกว่า 0)'; return; }
+    var bw = bwv * bwu, rtt = rv * ru;
+    var r = calcBdp({ bw: bw, rtt: rtt, frameBits: frameBits, w: w });
+    function pct(u) { return u >= 1 ? '100% (คำนวณได้ ' + fmt(u * 100) + '% แต่สายเต็มแล้ว)' : fmt(u * 100) + '%'; }
+    var bwName = $('#b_bwu').selectedOptions[0].textContent, rName = $('#b_rttu').selectedOptions[0].textContent;
+    out.textContent =
+      'Bandwidth = ' + fmt(bwv) + ' ' + bwName + ' = ' + fmt(bw) + ' bps\n' +
+      'RTT = ' + fmt(rv) + ' ' + rName + ' = ' + fmt(rtt) + ' วินาที\n\n' +
+      'BDP = ' + fmt(bw) + ' × ' + fmt(rtt) + ' = ' + fmt(r.bdp) + ' bits\n\n' +
+      'Utilization (Stop-and-Wait)\n  ' + fmt(frameBits) + ' / ' + fmt(r.bdp) + ' = ' + pct(r.uSw) + '\n' +
+      'Utilization (window ' + fmt(w) + ')\n  ' + fmt(w) + ' × ' + fmt(frameBits) + ' / ' + fmt(r.bdp) + ' = ' + pct(r.uW) + '\n\n' +
+      'window ที่ต้องใช้เพื่อให้ได้ 100%\n  ' + fmt(r.bdp) + ' / ' + fmt(frameBits) + ' = ' + fmt(r.need) + ' เฟรม';
+  }
+  ['#a_dist', '#a_speed', '#a_frame', '#a_total', '#a_n'].forEach(function (s) { $(s).addEventListener('input', calcA); });
+  ['#b_bw', '#b_bwu', '#b_rtt', '#b_rttu', '#b_frame', '#b_w'].forEach(function (s) { $(s).addEventListener('input', calcB); $(s).addEventListener('change', calcB); });
+  function setVals(map) { for (var k in map) $(k).value = map[k]; calcA(); calcB(); }
+  $('#a_ex').addEventListener('click', function () { setVals({ '#a_dist': 1000, '#a_speed': 500, '#a_frame': 100, '#a_total': 1000, '#a_n': 2 }); });
+  $('#b_ex1').addEventListener('click', function () { setVals({ '#b_bw': 1, '#b_bwu': '1e6', '#b_rtt': 20, '#b_rttu': '1e-3', '#b_frame': 1000, '#b_w': 15 }); });
+  $('#b_ex2').addEventListener('click', function () { setVals({ '#b_bw': 2, '#b_bwu': '1e6', '#b_rtt': 10, '#b_rttu': '1e-3', '#b_frame': 2000, '#b_w': 1 }); });
+  calcA(); calcB();
+
+  /* ---------- boot ---------- */
+  var p0 = PRESETS.lose2;
+  state.rules = p0.rules.map(function (r) { return JSON.parse(JSON.stringify(r)); });
+  restart(false, true);
+  $('#rKind').addEventListener('change', function () { dirty = true; });
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
